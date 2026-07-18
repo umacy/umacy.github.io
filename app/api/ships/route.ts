@@ -1,22 +1,22 @@
-import { neon } from "@neondatabase/serverless"
 import { NextResponse } from "next/server"
 
-const sql = neon(process.env.DATABASE_URL!)
+type ShipRecord = {
+  id: string
+  name: string
+  port: string
+  image_url: string | null
+  crew_count: number
+}
+
+let ships: ShipRecord[] = [
+  { id: "1", name: "Santa Maria", port: "Paita", image_url: null, crew_count: 6 },
+  { id: "2", name: "Mar Azul", port: "Callao", image_url: null, crew_count: 5 },
+  { id: "3", name: "El Faro", port: "Chimbote", image_url: null, crew_count: 4 },
+]
 
 export async function GET(request: Request) {
   try {
-    const result = await sql`
-      SELECT 
-        s.id,
-        s.name,
-        s.port,
-        s.image_url,
-        COUNT(cm.id) as crew_count
-      FROM ships s
-      LEFT JOIN crew_members cm ON s.id = cm.ship_id
-      GROUP BY s.id, s.name, s.port, s.image_url
-      ORDER BY s.name ASC
-    `
+    const result = [...ships].sort((a, b) => a.name.localeCompare(b.name))
 
     return NextResponse.json(result)
   } catch (error) {
@@ -30,13 +30,16 @@ export async function POST(request: Request) {
     const body = await request.json()
     const { name, port, image_url } = body
 
-    const result = await sql`
-      INSERT INTO ships (name, port, image_url)
-      VALUES (${name}, ${port}, ${image_url || null})
-      RETURNING *
-    `
+    const newShip: ShipRecord = {
+      id: String(Date.now()),
+      name,
+      port,
+      image_url: image_url || null,
+      crew_count: 0,
+    }
 
-    return NextResponse.json(result[0])
+    ships = [newShip, ...ships]
+    return NextResponse.json(newShip)
   } catch (error) {
     console.error("[v0] Error creating ship:", error)
     return NextResponse.json({ error: "Failed to create ship" }, { status: 500 })
@@ -48,14 +51,19 @@ export async function PUT(request: Request) {
     const body = await request.json()
     const { id, name, port, image_url } = body
 
-    const result = await sql`
-      UPDATE ships
-      SET name = ${name}, port = ${port}, image_url = ${image_url || null}
-      WHERE id = ${id}
-      RETURNING *
-    `
+    const index = ships.findIndex((ship) => ship.id === id)
+    if (index < 0) {
+      return NextResponse.json({ error: "Ship not found" }, { status: 404 })
+    }
 
-    return NextResponse.json(result[0])
+    const updated: ShipRecord = {
+      ...ships[index],
+      name,
+      port,
+      image_url: image_url || null,
+    }
+    ships[index] = updated
+    return NextResponse.json(updated)
   } catch (error) {
     console.error("[v0] Error updating ship:", error)
     return NextResponse.json({ error: "Failed to update ship" }, { status: 500 })
@@ -71,7 +79,7 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "Ship ID is required" }, { status: 400 })
     }
 
-    await sql`DELETE FROM ships WHERE id = ${id}`
+    ships = ships.filter((ship) => ship.id !== id)
 
     return NextResponse.json({ success: true })
   } catch (error) {

@@ -1,5 +1,44 @@
-import { sql } from "@/lib/db"
 import { NextResponse } from "next/server"
+
+type AvailabilityForecast = {
+  id: number
+  species: string
+  region: string
+  forecast_date: string
+  availability_percentage: number
+  confidence_level: number
+  created_at: string
+}
+
+const availabilityForecasts: AvailabilityForecast[] = [
+  {
+    id: 1,
+    species: "Anchoveta",
+    region: "Paita",
+    forecast_date: "2026-07-20",
+    availability_percentage: 78,
+    confidence_level: 88,
+    created_at: "2026-07-17T08:00:00Z",
+  },
+  {
+    id: 2,
+    species: "Bonito",
+    region: "Callao",
+    forecast_date: "2026-07-24",
+    availability_percentage: 65,
+    confidence_level: 82,
+    created_at: "2026-07-17T08:00:00Z",
+  },
+  {
+    id: 3,
+    species: "Caballa",
+    region: "Chimbote",
+    forecast_date: "2026-07-29",
+    availability_percentage: 71,
+    confidence_level: 80,
+    created_at: "2026-07-17T08:00:00Z",
+  },
+]
 
 export async function GET(request: Request) {
   try {
@@ -13,90 +52,22 @@ export async function GET(request: Request) {
     if (dateRange === "7days") dateLimitDays = 7
     else if (dateRange === "14days") dateLimitDays = 14
 
-    // Build query based on filter combinations using tagged templates
-    let result
+    const now = new Date()
+    const dateLimit = new Date(now)
+    dateLimit.setDate(now.getDate() + dateLimitDays)
 
     const hasSpeciesFilter = species && species !== "all"
     const hasRegionFilter = region && region !== "all"
     const hasDateFilter = dateRange && dateRange !== "all"
 
-    if (hasSpeciesFilter && hasRegionFilter && hasDateFilter) {
-      result = await sql`
-        SELECT 
-          id, species, region, forecast_date, availability_percentage,
-          confidence_level, created_at
-        FROM fish_availability_forecasts
-        WHERE species = ${species}
-          AND region = ${region}
-          AND forecast_date <= CURRENT_DATE + ${dateLimitDays}::integer
-        ORDER BY forecast_date ASC, species ASC
-      `
-    } else if (hasSpeciesFilter && hasRegionFilter) {
-      result = await sql`
-        SELECT 
-          id, species, region, forecast_date, availability_percentage,
-          confidence_level, created_at
-        FROM fish_availability_forecasts
-        WHERE species = ${species}
-          AND region = ${region}
-        ORDER BY forecast_date ASC, species ASC
-      `
-    } else if (hasSpeciesFilter && hasDateFilter) {
-      result = await sql`
-        SELECT 
-          id, species, region, forecast_date, availability_percentage,
-          confidence_level, created_at
-        FROM fish_availability_forecasts
-        WHERE species = ${species}
-          AND forecast_date <= CURRENT_DATE + ${dateLimitDays}::integer
-        ORDER BY forecast_date ASC, species ASC
-      `
-    } else if (hasRegionFilter && hasDateFilter) {
-      result = await sql`
-        SELECT 
-          id, species, region, forecast_date, availability_percentage,
-          confidence_level, created_at
-        FROM fish_availability_forecasts
-        WHERE region = ${region}
-          AND forecast_date <= CURRENT_DATE + ${dateLimitDays}::integer
-        ORDER BY forecast_date ASC, species ASC
-      `
-    } else if (hasSpeciesFilter) {
-      result = await sql`
-        SELECT 
-          id, species, region, forecast_date, availability_percentage,
-          confidence_level, created_at
-        FROM fish_availability_forecasts
-        WHERE species = ${species}
-        ORDER BY forecast_date ASC, species ASC
-      `
-    } else if (hasRegionFilter) {
-      result = await sql`
-        SELECT 
-          id, species, region, forecast_date, availability_percentage,
-          confidence_level, created_at
-        FROM fish_availability_forecasts
-        WHERE region = ${region}
-        ORDER BY forecast_date ASC, species ASC
-      `
-    } else if (hasDateFilter) {
-      result = await sql`
-        SELECT 
-          id, species, region, forecast_date, availability_percentage,
-          confidence_level, created_at
-        FROM fish_availability_forecasts
-        WHERE forecast_date <= CURRENT_DATE + ${dateLimitDays}::integer
-        ORDER BY forecast_date ASC, species ASC
-      `
-    } else {
-      result = await sql`
-        SELECT 
-          id, species, region, forecast_date, availability_percentage,
-          confidence_level, created_at
-        FROM fish_availability_forecasts
-        ORDER BY forecast_date ASC, species ASC
-      `
-    }
+    const result = availabilityForecasts
+      .filter((row) => (hasSpeciesFilter ? row.species === species : true))
+      .filter((row) => (hasRegionFilter ? row.region === region : true))
+      .filter((row) => {
+        if (!hasDateFilter) return true
+        return new Date(row.forecast_date) <= dateLimit
+      })
+      .sort((a, b) => a.forecast_date.localeCompare(b.forecast_date) || a.species.localeCompare(b.species))
 
     return NextResponse.json(result)
   } catch (error) {

@@ -1,7 +1,21 @@
-import { neon } from "@neondatabase/serverless"
 import { NextResponse } from "next/server"
 
-const sql = neon(process.env.DATABASE_URL!)
+type MarketPrice = {
+  species: string
+  port: string
+  price_per_kg: number
+  change_percentage: number
+  recorded_at: string
+}
+
+const marketPrices: MarketPrice[] = [
+  { species: "Anchoveta", port: "Paita", price_per_kg: 3.2, change_percentage: 2.4, recorded_at: "2026-07-16T09:00:00Z" },
+  { species: "Anchoveta", port: "Callao", price_per_kg: 3.0, change_percentage: 1.8, recorded_at: "2026-07-16T09:10:00Z" },
+  { species: "Bonito", port: "Paita", price_per_kg: 6.5, change_percentage: -0.9, recorded_at: "2026-07-16T09:20:00Z" },
+  { species: "Bonito", port: "Chimbote", price_per_kg: 6.1, change_percentage: 1.2, recorded_at: "2026-07-16T09:30:00Z" },
+  { species: "Caballa", port: "Ilo", price_per_kg: 5.3, change_percentage: 0.5, recorded_at: "2026-07-15T12:00:00Z" },
+  { species: "Jurel", port: "Pisco", price_per_kg: 4.9, change_percentage: 3.1, recorded_at: "2026-07-14T10:00:00Z" },
+]
 
 export async function GET(request: Request) {
   try {
@@ -13,71 +27,33 @@ export async function GET(request: Request) {
     const dateThreshold = new Date()
     dateThreshold.setDate(dateThreshold.getDate() - days)
 
+    const filteredByDate = marketPrices.filter((item) => new Date(item.recorded_at) >= dateThreshold)
+
     // Get latest prices
     if (!species) {
-      let result
+      const portFiltered =
+        port && port !== "All Ports" ? filteredByDate.filter((item) => item.port === port) : filteredByDate
 
-      if (port && port !== "All Ports") {
-        result = await sql`
-          SELECT DISTINCT ON (species, port)
-            species,
-            port,
-            price_per_kg,
-            change_percentage,
-            recorded_at
-          FROM market_prices
-          WHERE recorded_at >= ${dateThreshold.toISOString()}
-            AND port = ${port}
-          ORDER BY species, port, recorded_at DESC
-        `
-      } else {
-        result = await sql`
-          SELECT DISTINCT ON (species, port)
-            species,
-            port,
-            price_per_kg,
-            change_percentage,
-            recorded_at
-          FROM market_prices
-          WHERE recorded_at >= ${dateThreshold.toISOString()}
-          ORDER BY species, port, recorded_at DESC
-        `
+      const bySpeciesPort = new Map<string, MarketPrice>()
+      for (const item of portFiltered.sort((a, b) => b.recorded_at.localeCompare(a.recorded_at))) {
+        const key = `${item.species}::${item.port}`
+        if (!bySpeciesPort.has(key)) {
+          bySpeciesPort.set(key, item)
+        }
       }
+
+      const result = Array.from(bySpeciesPort.values()).sort(
+        (a, b) => a.species.localeCompare(b.species) || a.port.localeCompare(b.port),
+      )
 
       return NextResponse.json(result)
     }
 
     // Get historical data for a specific species
-    let result
-
-    if (port && port !== "All Ports") {
-      result = await sql`
-        SELECT 
-          species,
-          port,
-          price_per_kg,
-          change_percentage,
-          recorded_at
-        FROM market_prices
-        WHERE species = ${species}
-          AND recorded_at >= ${dateThreshold.toISOString()}
-          AND port = ${port}
-        ORDER BY recorded_at ASC
-      `
-    } else {
-      result = await sql`
-        SELECT 
-          species,
-          port,
-          price_per_kg,
-          change_percentage,
-          recorded_at
-        FROM market_prices
-        WHERE species = ${species}
-          AND recorded_at >= ${dateThreshold.toISOString()}
-        ORDER BY recorded_at ASC
-      `
-    }
+    const result = filteredByDate
+      .filter((item) => item.species === species)
+      .filter((item) => (port && port !== "All Ports" ? item.port === port : true))
+      .sort((a, b) => a.recorded_at.localeCompare(b.recorded_at))
 
     return NextResponse.json(result)
   } catch (error) {

@@ -1,22 +1,34 @@
-import { neon } from "@neondatabase/serverless"
 import { NextResponse } from "next/server"
 
-const sql = neon(process.env.DATABASE_URL!)
+type CrewMember = {
+  id: string
+  name: string
+  role: string
+  ship_id: string | null
+  avatar_url: string | null
+}
+
+const ships: Record<string, string> = {
+  "1": "Santa Maria",
+  "2": "Mar Azul",
+  "3": "El Faro",
+}
+
+let crewMembers: CrewMember[] = [
+  { id: "1", name: "Diego Flores", role: "Captain", ship_id: "1", avatar_url: null },
+  { id: "2", name: "Rosa Quispe", role: "Deckhand", ship_id: "1", avatar_url: null },
+  { id: "3", name: "Jorge Silva", role: "Engineer", ship_id: "2", avatar_url: null },
+  { id: "4", name: "Ana Torres", role: "Deckhand", ship_id: "3", avatar_url: null },
+]
 
 export async function GET(request: Request) {
   try {
-    const result = await sql`
-      SELECT 
-        cm.id,
-        cm.name,
-        cm.role,
-        cm.ship_id,
-        cm.avatar_url,
-        s.name as ship_name
-      FROM crew_members cm
-      LEFT JOIN ships s ON cm.ship_id = s.id
-      ORDER BY cm.name ASC
-    `
+    const result = [...crewMembers]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((member) => ({
+        ...member,
+        ship_name: member.ship_id ? ships[member.ship_id] || null : null,
+      }))
 
     return NextResponse.json(result)
   } catch (error) {
@@ -30,13 +42,16 @@ export async function POST(request: Request) {
     const body = await request.json()
     const { name, role, ship_id, avatar_url } = body
 
-    const result = await sql`
-      INSERT INTO crew_members (name, role, ship_id, avatar_url)
-      VALUES (${name}, ${role}, ${ship_id || null}, ${avatar_url || null})
-      RETURNING *
-    `
+    const newMember: CrewMember = {
+      id: String(Date.now()),
+      name,
+      role,
+      ship_id: ship_id || null,
+      avatar_url: avatar_url || null,
+    }
 
-    return NextResponse.json(result[0])
+    crewMembers = [newMember, ...crewMembers]
+    return NextResponse.json(newMember)
   } catch (error) {
     console.error("[v0] Error creating crew member:", error)
     return NextResponse.json({ error: "Failed to create crew member" }, { status: 500 })
@@ -48,14 +63,21 @@ export async function PUT(request: Request) {
     const body = await request.json()
     const { id, name, role, ship_id, avatar_url } = body
 
-    const result = await sql`
-      UPDATE crew_members
-      SET name = ${name}, role = ${role}, ship_id = ${ship_id || null}, avatar_url = ${avatar_url || null}
-      WHERE id = ${id}
-      RETURNING *
-    `
+    const index = crewMembers.findIndex((member) => member.id === id)
+    if (index < 0) {
+      return NextResponse.json({ error: "Crew member not found" }, { status: 404 })
+    }
 
-    return NextResponse.json(result[0])
+    const updated: CrewMember = {
+      id,
+      name,
+      role,
+      ship_id: ship_id || null,
+      avatar_url: avatar_url || null,
+    }
+
+    crewMembers[index] = updated
+    return NextResponse.json(updated)
   } catch (error) {
     console.error("[v0] Error updating crew member:", error)
     return NextResponse.json({ error: "Failed to update crew member" }, { status: 500 })
@@ -71,7 +93,7 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "Crew member ID is required" }, { status: 400 })
     }
 
-    await sql`DELETE FROM crew_members WHERE id = ${id}`
+    crewMembers = crewMembers.filter((member) => member.id !== id)
 
     return NextResponse.json({ success: true })
   } catch (error) {
